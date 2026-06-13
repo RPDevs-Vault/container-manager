@@ -2,8 +2,8 @@ name: Docker Asset Collector
 
 on:
   schedule:
-    - cron: '0 0 * * 0' # Weekly on Sunday
-  workflow_dispatch:
+    - cron: '0 0 * * 0'
+  workflow_dispatch: {}
 
 jobs:
   collect:
@@ -25,7 +25,6 @@ jobs:
           echo "| Repository | Type | Action Taken |" >> discovery_report.md
           echo "| :--- | :--- | :--- |" >> discovery_report.md
 
-          # Exclusion List
           EXCLUDED="IamRPDev/otaku-api IamRPDev/otaku-ui IamRPDev/llmdata-core IamRPDev/otaku-docker"
 
           # Scan both User and Organization
@@ -34,7 +33,6 @@ jobs:
           REPOS="$REPOS_USER $REPOS_ORG"
 
           for repo in $REPOS; do
-            # Check if repo is in exclusion list
             if [[ $EXCLUDED =~ $repo ]]; then
               echo "Skipping excluded repository: $repo"
               continue
@@ -76,7 +74,6 @@ jobs:
 - **Source Repo:** [\`$repo\`](https://github.com/$repo)
 - **Image:** \`$IMAGE_NAME:latest\`
 - **Command:** See [\`command.txt\`](./command.txt)
-- **Last Discovered:** $(date)
 EOF
             fi
           done
