@@ -5,24 +5,52 @@ on:
     paths:
       - 'build/**'
       - 'images/**'
+      - 'runners/**'
       - 'manifest.yaml'
       - 'thirdparty.yaml'
   workflow_dispatch:
 
 jobs:
-  # Logic to determine which runner to use or attempt local first
+  setup-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - id: set-matrix
+        run: |
+          # 1. Collect local builds
+          LOCAL_JSON=$(ls -d build/*/ 2>/dev/null | xargs -n 1 basename | jq -R -s -c 'split("\n")[:-1] | map({name: ., source: "local", dir: "build/" + .})')
+          if [ -z "$LOCAL_JSON" ]; then LOCAL_JSON="[]"; fi
+
+          # 2. Collect runners
+          RUNNER_JSON=$(ls -d runners/*/ 2>/dev/null | xargs -n 1 basename | jq -R -s -c 'split("\n")[:-1] | map({name: "runner-" + ., source: "runner", dir: "runners/" + .})')
+          if [ -z "$RUNNER_JSON" ]; then RUNNER_JSON="[]"; fi
+
+          # 3. Collect manifest projects
+          MANIFEST_JSON=$(yq -o=json -c '.projects // []' manifest.yaml | jq -c 'map(. + {source: "manifest", dir: "build/" + .name})')
+          
+          # 4. Collect thirdparty projects
+          THIRDPARTY_JSON=$(yq -o=json -c '.repositories // []' thirdparty.yaml | jq -c 'map(. + {source: "thirdparty", dir: "build/" + .name})')
+
+          # Merge all into a single array
+          FULL_MATRIX=$(echo "$LOCAL_JSON $RUNNER_JSON $MANIFEST_JSON $THIRDPARTY_JSON" | jq -s -c 'add')
+          echo "matrix=$FULL_MATRIX" >> $GITHUB_OUTPUT
+
   build:
-    # We attempt self-hosted first. If no self-hosted runner is available,
-    # this job will eventually timeout or the user can cancel and trigger cloud.
-    # To implement a TRUE automatic fallback, we would need a pre-check job.
+    needs: setup-matrix
+    if: needs.setup-matrix.outputs.matrix != '[]'
+    strategy:
+      fail-fast: false
+      matrix: 
+        project: ${{ fromJSON(needs.setup-matrix.outputs.matrix) }}
+    
+    # Priority: Self-hosted Vault Builder
     runs-on: [self-hosted, vault-builder]
     continue-on-error: true
-    outputs:
-      job_status: ${{ job.status }}
-    permissions:
-      contents: write
-      packages: write
-
+    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,116 +64,73 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.SYNC_TOKEN }}
 
-      - name: Clone External Projects
+      - name: Prepare Source
         run: |
-          mkdir -p build
-          if [ -f "manifest.yaml" ]; then
-            echo "Processing manifest.yaml..."
-            COUNT=$(yq '.projects | length' manifest.yaml)
-            for ((i=0; i<COUNT; i++)); do
-              NAME=$(yq ".projects[$i].name" manifest.yaml)
-              URL=$(yq ".projects[$i].source_url" manifest.yaml)
-              BRANCH=$(yq ".projects[$i].branch // \"main\"" manifest.yaml)
-              if [ "$URL" != "null" ]; then
-                echo "Cloning $NAME from $URL ($BRANCH)..."
-                rm -rf "build/$NAME"
-                git clone --depth 1 --branch "$BRANCH" "$URL" "build/$NAME" || \
-                git clone --depth 1 --branch "master" "$URL" "build/$NAME" || echo "Failed to clone $NAME"
-              fi
-            done
-          fi
-          if [ -f "thirdparty.yaml" ]; then
-            echo "Processing thirdparty.yaml..."
-            COUNT=$(yq '.repositories | length' thirdparty.yaml)
-            for ((i=0; i<COUNT; i++)); do
-              NAME=$(yq ".repositories[$i].name" thirdparty.yaml)
-              URL=$(yq ".repositories[$i].url" thirdparty.yaml)
-              BRANCH=$(yq ".repositories[$i].branch // \"main\"" thirdparty.yaml)
-              if [ "$URL" != "null" ]; then
-                echo "Cloning third-party $NAME from $URL ($BRANCH)..."
-                rm -rf "build/$NAME"
-                git clone --depth 1 --branch "$BRANCH" "$URL" "build/$NAME" || \
-                git clone --depth 1 --branch "master" "$URL" "build/$NAME" || echo "Failed to clone $NAME"
-              fi
-            done
+          NAME="${{ matrix.project.name }}"
+          DIR="${{ matrix.project.dir }}"
+          URL="${{ matrix.project.source_url || matrix.project.url }}"
+          BRANCH="${{ matrix.project.branch || 'main' }}"
+          
+          if [[ "${{ matrix.project.source }}" == "manifest" || "${{ matrix.project.source }}" == "thirdparty" ]]; then
+            echo "Cloning $NAME from $URL ($BRANCH)..."
+            mkdir -p build
+            rm -rf "$DIR"
+            git clone --depth 1 --branch "$BRANCH" "$URL" "$DIR" || \
+            git clone --depth 1 --branch "master" "$URL" "$DIR" || echo "Failed to clone $NAME"
           fi
 
-      - name: Archive and Organize Assets
+      - name: Archive and Organize
         run: |
-          find build/ -name ".git" -type d -exec rm -rf {} + || true
-          mkdir -p containers
-          if [ -d "build" ]; then
-            for dir in build/*/; do
-              if [ -f "${dir}Dockerfile" ] || [ -f "${dir}dockerfile" ]; then
-                PROJECT_NAME=$(basename "$dir")
-                IMAGE_NAME="ghcr.io/rpdevs-vault/${PROJECT_NAME,,}"
-                TARGET_DIR="containers/$PROJECT_NAME"
-                mkdir -p "$TARGET_DIR"
-                if [ -d "compose/$PROJECT_NAME" ]; then
-                  mv compose/$PROJECT_NAME/* "$TARGET_DIR/"
-                  rm -rf "compose/$PROJECT_NAME"
-                fi
-                echo "docker run -d --name $PROJECT_NAME $IMAGE_NAME:latest" > "$TARGET_DIR/command.txt"
-                cat << EOF > "$TARGET_DIR/README.md"
-# 📦 $PROJECT_NAME
+          NAME="${{ matrix.project.name }}"
+          DIR="${{ matrix.project.dir }}"
+          
+          if [ -d "$DIR" ]; then
+            rm -rf "$DIR/.git" 2>/dev/null || true
+            mkdir -p "containers/$NAME"
+            IMAGE_NAME="ghcr.io/rpdevs-vault/${NAME,,}"
+            
+            echo "docker run -d --name $NAME $IMAGE_NAME:latest" > "containers/$NAME/command.txt"
+            cat << EOF > "containers/$NAME/README.md"
+# 📦 $NAME
 - **Image:** \`$IMAGE_NAME:latest\`
-- **Registry:** [GHCR](https://github.com/orgs/RPDevs-Vault/packages/container/$PROJECT_NAME)
-- **Source:** Archived in \`./build/$PROJECT_NAME\`
-- **Command:** See [\`command.txt\`](./command.txt)
+- **Type:** ${{ matrix.project.source }}
+- **Registry:** [GHCR](https://github.com/orgs/RPDevs-Vault/packages/container/${NAME,,})
 - **Last Built:** $(date)
 EOF
-                mkdir -p images
-                cat << EOF > "images/$PROJECT_NAME.md"
-# 📦 $PROJECT_NAME
-Image: \`$IMAGE_NAME:latest\`
-Registry: [GHCR](https://github.com/orgs/RPDevs-Vault/packages/container/$PROJECT_NAME)
-EOF
-              fi
-            done
-          fi
-          git config user.name "Project Archiver"
-          git config user.email "actions@github.com"
-          git add build/ images/ containers/ compose/
-          if ! git diff --staged --quiet; then
-            git commit -m "chore: archive source and organize containers [automated]"
-            git push origin main
+            mkdir -p images
+            echo "# 📦 $NAME" > "images/$NAME.md"
+            echo "Image: \`$IMAGE_NAME:latest\`" >> "images/$NAME.md"
+
+            git config user.name "Fleet Archiver"
+            git config user.email "actions@github.com"
+            git add .
+            if ! git diff --staged --quiet; then
+              git commit -m "chore(archiver): update $NAME source and assets"
+              git push origin main
+            fi
           fi
 
-      - name: Build and Push Projects
+      - name: Build and Push
         run: |
-          if [ -d "build" ]; then
-            for dir in build/*/; do
-              if [ -f "${dir}Dockerfile" ] || [ -f "${dir}dockerfile" ]; then
-                PROJECT_NAME=$(basename "$dir")
-                IMAGE_NAME="ghcr.io/rpdevs-vault/$PROJECT_NAME"
-                echo "Building project: $PROJECT_NAME..."
-                DOCKERFILE_PATH=$(ls "${dir}" | grep -i "^dockerfile$")
-                docker build -f "${dir}${DOCKERFILE_PATH}" -t "${IMAGE_NAME,,}:latest" "${dir}"
-                docker push "${IMAGE_NAME,,}:latest"
-              fi
-            done
-          fi
-          if [ -d "images" ]; then
-            for dir in images/*/; do
-              if [ -f "${dir}Dockerfile" ] || [ -f "${dir}dockerfile" ]; then
-                IMAGE_BASE=$(basename "$dir")
-                IMAGE_NAME="ghcr.io/rpdevs-vault/personal-$IMAGE_BASE"
-                echo "Building personal image: $IMAGE_BASE..."
-                DOCKERFILE_PATH=$(ls "${dir}" | grep -i "^dockerfile$")
-                docker build -f "${dir}${DOCKERFILE_PATH}" -t "${IMAGE_NAME,,}:latest" "${dir}"
-                docker push "${IMAGE_NAME,,}:latest"
-              fi
-            done
+          NAME="${{ matrix.project.name }}"
+          DIR="${{ matrix.project.dir }}"
+          IMAGE_NAME="ghcr.io/rpdevs-vault/${NAME,,}"
+          
+          if [ -f "$DIR/Dockerfile" ] || [ -f "$DIR/dockerfile" ]; then
+            echo "Building $NAME..."
+            DOCKERFILE=$(ls "$DIR" | grep -i "^dockerfile$" | head -n 1)
+            docker build -f "$DIR/$DOCKERFILE" -t "$IMAGE_NAME:latest" "$DIR"
+            docker push "$IMAGE_NAME:latest"
           fi
 
-  # Fallback job if self-hosted fails
   build-fallback:
-    needs: build
+    needs: [setup-matrix, build]
     if: failure() || cancelled()
+    strategy:
+      fail-fast: false
+      matrix: 
+        project: ${{ fromJSON(needs.setup-matrix.outputs.matrix) }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -157,20 +142,15 @@ EOF
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.SYNC_TOKEN }}
-      # ... (Logic repeated for fallback)
-      - name: Build and Push (Fallback)
+      - name: Build and Push (Cloud Fallback)
         run: |
-          # We repeat the core build logic here for cloud runners
-          # (Ideally this would be a composite action to avoid repetition)
-          # [Abbreviated for context efficiency, but includes the same build loop]
-          if [ -d "build" ]; then
-            for dir in build/*/; do
-              if [ -f "${dir}Dockerfile" ] || [ -f "${dir}dockerfile" ]; then
-                PROJECT_NAME=$(basename "$dir")
-                IMAGE_NAME="ghcr.io/rpdevs-vault/$PROJECT_NAME"
-                DOCKERFILE_PATH=$(ls "${dir}" | grep -i "^dockerfile$")
-                docker build -f "${dir}${DOCKERFILE_PATH}" -t "${IMAGE_NAME,,}:latest" "${dir}"
-                docker push "${IMAGE_NAME,,}:latest"
-              fi
-            done
+          NAME="${{ matrix.project.name }}"
+          DIR="${{ matrix.project.dir }}"
+          IMAGE_NAME="ghcr.io/rpdevs-vault/${NAME,,}"
+          
+          if [ -f "$DIR/Dockerfile" ] || [ -f "$DIR/dockerfile" ]; then
+            echo "Building $NAME (Cloud)..."
+            DOCKERFILE=$(ls "$DIR" | grep -i "^dockerfile$" | head -n 1)
+            docker build -f "$DIR/$DOCKERFILE" -t "$IMAGE_NAME:latest" "$DIR"
+            docker push "$IMAGE_NAME:latest"
           fi
