@@ -39,39 +39,51 @@ jobs:
 
             echo "Scanning $repo..."
             REPO_CLEAN=$(echo "$repo" | sed 's/\//_/g')
+            TARGET_DIR="containers/$REPO_CLEAN"
             
             # Search for Dockerfiles and Compose files
             FILES=$(gh api "/repos/$repo/contents" --jq '.[] | select(.name == "Dockerfile" or .name == "docker-compose.yml" or .name == "compose.yaml" or .name == "compose.yml") | .name' 2>/dev/null)
             
-            for file in $FILES; do
-              # Download the file
-              CONTENT=$(gh api "/repos/$repo/contents/$file" --jq '.content' | base64 -d 2>/dev/null)
+            if [[ -n "$FILES" ]]; then
+              mkdir -p "$TARGET_DIR"
               
-              if [[ "$file" == "Dockerfile" ]]; then
-                mkdir -p "build/$REPO_CLEAN"
-                echo "$CONTENT" > "build/$REPO_CLEAN/Dockerfile"
-                echo "| \`$repo\` | Dockerfile | Collected to \`build/$REPO_CLEAN/\` |" >> discovery_report.md
+              for file in $FILES; do
+                # Download the file
+                CONTENT=$(gh api "/repos/$repo/contents/$file" --jq '.content' | base64 -d 2>/dev/null)
                 
-                # Create a basic one-liner
-                mkdir -p "containers"
-                IMAGE_NAME="ghcr.io/rpdevs-vault/${REPO_CLEAN,,}"
-                echo "docker run -d --name $REPO_CLEAN $IMAGE_NAME:latest" > "containers/$REPO_CLEAN.sh"
-              fi
-              
-              if [[ "$file" == *"compose"* ]]; then
-                mkdir -p "compose/$REPO_CLEAN"
-                echo "$CONTENT" > "compose/$REPO_CLEAN/$file"
-                echo "| \`$repo\` | Compose | Collected to \`compose/$REPO_CLEAN/\` |" >> discovery_report.md
-              fi
-            done
+                if [[ "$file" == "Dockerfile" ]]; then
+                  mkdir -p "build/$REPO_CLEAN"
+                  echo "$CONTENT" > "build/$REPO_CLEAN/Dockerfile"
+                  IMAGE_NAME="ghcr.io/rpdevs-vault/${REPO_CLEAN,,}"
+                  echo "docker run -d --name $REPO_CLEAN $IMAGE_NAME:latest" > "$TARGET_DIR/command.txt"
+                  echo "| \`$repo\` | Dockerfile | Collected to \`build/$REPO_CLEAN/\` |" >> discovery_report.md
+                fi
+                
+                if [[ "$file" == *"compose"* ]]; then
+                  echo "$CONTENT" > "$TARGET_DIR/$file"
+                  echo "| \`$repo\` | Compose | Collected to \`$TARGET_DIR/\` |" >> discovery_report.md
+                fi
+              done
+
+              # Create README.md for the container project
+              IMAGE_NAME="ghcr.io/rpdevs-vault/${REPO_CLEAN,,}"
+              cat << EOF > "$TARGET_DIR/README.md"
+# 📦 $REPO_CLEAN
+
+- **Source Repo:** [\`$repo\`](https://github.com/$repo)
+- **Image:** \`$IMAGE_NAME:latest\`
+- **Command:** See [\`command.txt\`](./command.txt)
+- **Last Discovered:** $(date)
+EOF
+            fi
           done
 
           # Commit changes
           git config user.name "Asset Collector"
           git config user.email "actions@github.com"
-          git add build/ compose/ containers/ images/
+          git add build/ containers/ images/
           if ! git diff --staged --quiet; then
-            git commit -m "feat: automatically collect Docker assets from organization and personal repos (with exclusions)"
+            git commit -m "feat: automatically collect Docker assets and organize into project folders (with exclusions)"
             git push origin main
           fi
 

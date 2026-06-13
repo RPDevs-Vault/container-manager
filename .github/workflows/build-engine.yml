@@ -67,25 +67,47 @@ jobs:
             done
           fi
 
-      - name: Archive and List Images
+      - name: Archive and Organize Assets
         run: |
-          # Remove .git directories from cloned projects
+          # 1. Remove .git directories from cloned projects
           find build/ -name ".git" -type d -exec rm -rf {} + || true
           
-          # Create image metadata files in ./images/ for everything in ./build/
-          mkdir -p images
+          # 2. Organize into ./containers/<project>/
+          mkdir -p containers
           if [ -d "build" ]; then
             for dir in build/*/; do
               if [ -f "${dir}Dockerfile" ] || [ -f "${dir}dockerfile" ]; then
                 PROJECT_NAME=$(basename "$dir")
                 IMAGE_NAME="ghcr.io/rpdevs-vault/${PROJECT_NAME,,}"
-                cat << EOF > "images/$PROJECT_NAME.md"
+                TARGET_DIR="containers/$PROJECT_NAME"
+                mkdir -p "$TARGET_DIR"
+                
+                # Move compose files if they exist in old location
+                if [ -d "compose/$PROJECT_NAME" ]; then
+                  mv compose/$PROJECT_NAME/* "$TARGET_DIR/"
+                  rm -rf "compose/$PROJECT_NAME"
+                fi
+
+                # Create command.txt (one-liner)
+                echo "docker run -d --name $PROJECT_NAME $IMAGE_NAME:latest" > "$TARGET_DIR/command.txt"
+                
+                # Create README.md
+                cat << EOF > "$TARGET_DIR/README.md"
 # 📦 $PROJECT_NAME
 
 - **Image:** \`$IMAGE_NAME:latest\`
 - **Registry:** [GHCR](https://github.com/orgs/RPDevs-Vault/packages/container/$PROJECT_NAME)
 - **Source:** Archived in \`./build/$PROJECT_NAME\`
+- **Command:** See [\`command.txt\`](./command.txt)
 - **Last Built:** $(date)
+EOF
+
+                # Also update listing in ./images/ (metadata)
+                mkdir -p images
+                cat << EOF > "images/$PROJECT_NAME.md"
+# 📦 $PROJECT_NAME
+Image: \`$IMAGE_NAME:latest\`
+Registry: [GHCR](https://github.com/orgs/RPDevs-Vault/packages/container/$PROJECT_NAME)
 EOF
               fi
             done
@@ -93,9 +115,9 @@ EOF
 
           git config user.name "Project Archiver"
           git config user.email "actions@github.com"
-          git add build/ images/
+          git add build/ images/ containers/ compose/
           if ! git diff --staged --quiet; then
-            git commit -m "chore: archive source code and update image listing [automated]"
+            git commit -m "chore: archive source code and organize containers into project folders [automated]"
             git push origin main
           else
             echo "No new changes to archive."
