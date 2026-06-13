@@ -7,7 +7,7 @@ Roadmap for the **RPDevs-Vault** container infrastructure.
 - [ ] **Vulnerability Scanner:** Integration with `Trivy` or `Gripe` to scan internal images for high/critical CVEs.
 
 ## 🧹 Lifecycle & Storage
-- [ ] **Stale Package Cleanup:** Automatic deletion of untagged images and versions older than 90 days.
+- [x] **Stale Package Cleanup:** Automatic deletion of untagged images and versions older than 90 days.
 - [ ] **Artifact Transfer:** Move compiled binaries from standard GH Actions to versioned OCI artifacts.
 
 ## 🔄 Archival & Mirroring
