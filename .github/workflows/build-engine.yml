@@ -6,6 +6,7 @@ on:
       - 'build/**'
       - 'images/**'
       - 'manifest.yaml'
+      - 'thirdparty.yaml'
   workflow_dispatch:
 
 jobs:
@@ -28,22 +29,36 @@ jobs:
 
       - name: Clone External Projects
         run: |
+          mkdir -p build
+          
+          # Process manifest.yaml
           if [ -f "manifest.yaml" ]; then
-            echo "Processing manifest.yaml for external sources..."
-            # Get count of projects
+            echo "Processing manifest.yaml..."
             COUNT=$(yq '.projects | length' manifest.yaml)
             for ((i=0; i<COUNT; i++)); do
               NAME=$(yq ".projects[$i].name" manifest.yaml)
               URL=$(yq ".projects[$i].source_url" manifest.yaml)
               BRANCH=$(yq ".projects[$i].branch // \"main\"" manifest.yaml)
-              
               if [ "$URL" != "null" ]; then
                 echo "Cloning $NAME from $URL ($BRANCH)..."
-                mkdir -p build
-                git clone --depth 1 --branch "$BRANCH" "$URL" "build/$NAME" || {
-                  # Fallback to master if main fails
-                  git clone --depth 1 --branch "master" "$URL" "build/$NAME" || echo "Failed to clone $NAME"
-                }
+                git clone --depth 1 --branch "$BRANCH" "$URL" "build/$NAME" || \
+                git clone --depth 1 --branch "master" "$URL" "build/$NAME" || echo "Failed to clone $NAME"
+              fi
+            done
+          fi
+
+          # Process thirdparty.yaml
+          if [ -f "thirdparty.yaml" ]; then
+            echo "Processing thirdparty.yaml..."
+            COUNT=$(yq '.repositories | length' thirdparty.yaml)
+            for ((i=0; i<COUNT; i++)); do
+              NAME=$(yq ".repositories[$i].name" thirdparty.yaml)
+              URL=$(yq ".repositories[$i].url" thirdparty.yaml)
+              BRANCH=$(yq ".repositories[$i].branch // \"main\"" thirdparty.yaml)
+              if [ "$URL" != "null" ]; then
+                echo "Cloning third-party $NAME from $URL ($BRANCH)..."
+                git clone --depth 1 --branch "$BRANCH" "$URL" "build/$NAME" || \
+                git clone --depth 1 --branch "master" "$URL" "build/$NAME" || echo "Failed to clone $NAME"
               fi
             done
           fi
