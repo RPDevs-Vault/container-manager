@@ -28,7 +28,10 @@ jobs:
           # Exclusion List
           EXCLUDED="IamRPDev/otaku-api IamRPDev/otaku-ui IamRPDev/llmdata-core IamRPDev/otaku-docker"
 
-          REPOS=$(gh repo list --limit 1000 --json nameWithOwner,isArchived --jq '.[] | select(.isArchived == false) | .nameWithOwner')
+          # Scan both User and Organization
+          REPOS_USER=$(gh repo list IamRPDev --limit 1000 --json nameWithOwner,isArchived --jq '.[] | select(.isArchived == false) | .nameWithOwner')
+          REPOS_ORG=$(gh repo list RPDevs-Vault --limit 1000 --json nameWithOwner,isArchived --jq '.[] | select(.isArchived == false) | .nameWithOwner')
+          REPOS="$REPOS_USER $REPOS_ORG"
 
           for repo in $REPOS; do
             # Check if repo is in exclusion list
@@ -83,7 +86,7 @@ EOF
           git config user.email "actions@github.com"
           git add build/ containers/ images/
           if ! git diff --staged --quiet; then
-            git commit -m "feat: automatically collect Docker assets and organize into project folders (with exclusions)"
+            git commit -m "feat: automatically collect Docker assets and organize into project folders (User + Org)"
             git push origin main
           fi
 
