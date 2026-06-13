@@ -68,12 +68,13 @@ jobs:
           # 1. Build everything in ./build/ automatically if it has a Dockerfile
           if [ -d "build" ]; then
             for dir in build/*/; do
-              if [ -f "${dir}Dockerfile" ]; then
+              if [ -f "${dir}Dockerfile" ] || [ -f "${dir}dockerfile" ]; then
                 PROJECT_NAME=$(basename "$dir")
                 IMAGE_NAME="ghcr.io/rpdevs-vault/$PROJECT_NAME"
                 
                 echo "Building project: $PROJECT_NAME..."
-                docker build -t "${IMAGE_NAME,,}:latest" "$dir"
+                DOCKERFILE_PATH=$(ls "${dir}" | grep -i "^dockerfile$")
+                docker build -f "${dir}${DOCKERFILE_PATH}" -t "${IMAGE_NAME,,}:latest" "${dir}"
                 docker push "${IMAGE_NAME,,}:latest"
               fi
             done
@@ -82,12 +83,13 @@ jobs:
           # 2. Build everything in ./images/ automatically
           if [ -d "images" ]; then
             for dir in images/*/; do
-              if [ -f "${dir}Dockerfile" ]; then
+              if [ -f "${dir}Dockerfile" ] || [ -f "${dir}dockerfile" ]; then
                 IMAGE_BASE=$(basename "$dir")
                 IMAGE_NAME="ghcr.io/rpdevs-vault/personal-$IMAGE_BASE"
                 
                 echo "Building personal image: $IMAGE_BASE..."
-                docker build -t "${IMAGE_NAME,,}:latest" "$dir"
+                DOCKERFILE_PATH=$(ls "${dir}" | grep -i "^dockerfile$")
+                docker build -f "${dir}${DOCKERFILE_PATH}" -t "${IMAGE_NAME,,}:latest" "${dir}"
                 docker push "${IMAGE_NAME,,}:latest"
               fi
             done
