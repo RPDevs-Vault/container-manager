@@ -25,9 +25,18 @@ jobs:
           echo "| Repository | Type | Action Taken |" >> discovery_report.md
           echo "| :--- | :--- | :--- |" >> discovery_report.md
 
+          # Exclusion List
+          EXCLUDED="IamRPDev/otaku-api IamRPDev/otaku-ui IamRPDev/llmdata-core IamRPDev/otaku-docker"
+
           REPOS=$(gh repo list --limit 1000 --json nameWithOwner,isArchived --jq '.[] | select(.isArchived == false) | .nameWithOwner')
 
           for repo in $REPOS; do
+            # Check if repo is in exclusion list
+            if [[ $EXCLUDED =~ $repo ]]; then
+              echo "Skipping excluded repository: $repo"
+              continue
+            fi
+
             echo "Scanning $repo..."
             REPO_CLEAN=$(echo "$repo" | sed 's/\//_/g')
             
@@ -62,7 +71,7 @@ jobs:
           git config user.email "actions@github.com"
           git add build/ compose/ containers/ images/
           if ! git diff --staged --quiet; then
-            git commit -m "feat: automatically collect Docker assets from organization and personal repos"
+            git commit -m "feat: automatically collect Docker assets from organization and personal repos (with exclusions)"
             git push origin main
           fi
 
