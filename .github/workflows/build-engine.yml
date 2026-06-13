@@ -1,0 +1,57 @@
+name: Container Build Engine
+
+on:
+  push:
+    paths:
+      - 'build/**'
+      - 'images/**'
+      - 'manifest.yaml'
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.SYNC_TOKEN }}
+
+      - name: Build and Push Projects
+        run: |
+          # 1. Build everything in ./build/ automatically if it has a Dockerfile
+          if [ -d "build" ]; then
+            for dir in build/*/; do
+              if [ -f "${dir}Dockerfile" ]; then
+                PROJECT_NAME=$(basename "$dir")
+                IMAGE_NAME="ghcr.io/rpdevs-vault/$PROJECT_NAME"
+                
+                echo "Building project: $PROJECT_NAME..."
+                docker build -t "$IMAGE_NAME:latest" "$dir"
+                docker push "$IMAGE_NAME:latest"
+              fi
+            done
+          fi
+
+          # 2. Build everything in ./images/ automatically
+          if [ -d "images" ]; then
+            for dir in images/*/; do
+              if [ -f "${dir}Dockerfile" ]; then
+                IMAGE_BASE=$(basename "$dir")
+                IMAGE_NAME="ghcr.io/rpdevs-vault/personal-$IMAGE_BASE"
+                
+                echo "Building personal image: $IMAGE_BASE..."
+                docker build -t "$IMAGE_NAME:latest" "$dir"
+                docker push "$IMAGE_NAME:latest"
+              fi
+            done
+          fi

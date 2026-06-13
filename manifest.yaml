@@ -1,0 +1,21 @@
+# RPDevs Vault Container Manifest
+# This file defines the build projects and deployment configs for the organization.
+
+projects:
+  # Example Build Project
+  # - name: example-app
+  #   path: ./build/example-app
+  #   tags: ["latest", "v1.0.0"]
+  #   context: .
+  
+  # Example Image Reference
+  # - name: personal-alpine
+  #   path: ./images/alpine-custom
+  #   description: "Custom alpine image with basic tools"
+
+containers:
+  # Deployment definitions
+  # - name: my-service
+  #   type: compose # or "oneliner"
+  #   file: ./compose/my-service/docker-compose.yml
+  #   oneliner: "docker run -d --name my-service ..."
