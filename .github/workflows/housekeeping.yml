@@ -8,7 +8,7 @@ on:
 jobs:
   cleanup:
     name: Runner Maintenance
-    runs-on: [self-hosted, vault-builder]
+    runs-on: [self-hosted, linux, heavy]
     steps:
       - name: Prune Docker Layers
         run: |
