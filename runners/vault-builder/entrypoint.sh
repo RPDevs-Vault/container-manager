@@ -4,13 +4,30 @@
 # GH_TOKEN is required
 # If GH_REPOSITORY is set, register to repo. Otherwise register to Org.
 
+get_token() {
+    local ENDPOINT=$1
+    local RESPONSE=$(curl -sX POST -w "\n%{http_code}" -H "Authorization: token ${GH_TOKEN}" "$ENDPOINT")
+    local HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+    local BODY=$(echo "$RESPONSE" | sed '$d')
+
+    if [ "$HTTP_CODE" -ne 201 ]; then
+        echo "ERROR: Failed to fetch registration token (HTTP $HTTP_CODE)."
+        echo "Response: $BODY"
+        echo "Sleeping for 60 seconds to prevent API abuse loops..."
+        sleep 60
+        exit 1
+    fi
+
+    echo "$BODY" | jq -r .token
+}
+
 if [ -n "${GH_REPOSITORY}" ]; then
     echo "Registering to Repository: ${GH_OWNER}/${GH_REPOSITORY}"
-    REG_TOKEN=$(curl -sX POST -H "Authorization: token ${GH_TOKEN}" https://api.github.com/repos/${GH_OWNER}/${GH_REPOSITORY}/actions/runners/registration-token | jq -r .token)
+    REG_TOKEN=$(get_token "https://api.github.com/repos/${GH_OWNER}/${GH_REPOSITORY}/actions/runners/registration-token")
     URL="https://github.com/${GH_OWNER}/${GH_REPOSITORY}"
 else
     echo "Registering to Organization: ${GH_OWNER}"
-    REG_TOKEN=$(curl -sX POST -H "Authorization: token ${GH_TOKEN}" https://api.github.com/orgs/${GH_OWNER}/actions/runners/registration-token | jq -r .token)
+    REG_TOKEN=$(get_token "https://api.github.com/orgs/${GH_OWNER}/actions/runners/registration-token")
     URL="https://github.com/${GH_OWNER}"
 fi
 
@@ -19,9 +36,9 @@ fi
 cleanup() {
     echo "Removing runner..."
     if [ -n "${GH_REPOSITORY}" ]; then
-        REG_TOKEN=$(curl -sX POST -H "Authorization: token ${GH_TOKEN}" https://api.github.com/repos/${GH_OWNER}/${GH_REPOSITORY}/actions/runners/registration-token | jq -r .token)
+        REG_TOKEN=$(get_token "https://api.github.com/repos/${GH_OWNER}/${GH_REPOSITORY}/actions/runners/registration-token")
     else
-        REG_TOKEN=$(curl -sX POST -H "Authorization: token ${GH_TOKEN}" https://api.github.com/orgs/${GH_OWNER}/actions/runners/registration-token | jq -r .token)
+        REG_TOKEN=$(get_token "https://api.github.com/orgs/${GH_OWNER}/actions/runners/registration-token")
     fi
     ./config.sh remove --token ${REG_TOKEN}
 }
