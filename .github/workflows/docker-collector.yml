@@ -1,4 +1,4 @@
-name: Docker Asset Collector
+name: Docker Collector
 
 on:
   schedule:
