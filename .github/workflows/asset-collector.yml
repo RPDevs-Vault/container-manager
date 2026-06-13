@@ -8,29 +8,65 @@ on:
 jobs:
   collect:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+
     steps:
-      - name: Scan Repositories
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Scan and Collect Assets
         env:
           GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
         run: |
           echo "### 🚢 Docker Asset Discovery Report" > discovery_report.md
-          echo "Scanning for Docker assets in IamRPDev and RPDevs-Vault..." >> discovery_report.md
-          echo "| Repository | Type | File Path |" >> discovery_report.md
+          echo "Scanning and collecting Docker assets from IamRPDev and RPDevs-Vault..." >> discovery_report.md
+          echo "| Repository | Type | Action Taken |" >> discovery_report.md
           echo "| :--- | :--- | :--- |" >> discovery_report.md
 
-          REPOS=$(gh repo list --limit 1000 --json nameWithOwner --jq '.[].nameWithOwner')
+          REPOS=$(gh repo list --limit 1000 --json nameWithOwner,isArchived --jq '.[] | select(.isArchived == false) | .nameWithOwner')
 
           for repo in $REPOS; do
             echo "Scanning $repo..."
+            REPO_CLEAN=$(echo "$repo" | sed 's/\//_/g')
             
-            # Search for Dockerfiles
-            DOCKERFILES=$(gh api "/repos/$repo/contents" --jq '.[] | select(.name == "Dockerfile" or .name == "docker-compose.yml" or .name == "compose.yaml") | .path' 2>/dev/null)
+            # Search for Dockerfiles and Compose files
+            FILES=$(gh api "/repos/$repo/contents" --jq '.[] | select(.name == "Dockerfile" or .name == "docker-compose.yml" or .name == "compose.yaml" or .name == "compose.yml") | .name' 2>/dev/null)
             
-            for file in $DOCKERFILES; do
-              TYPE="Dockerfile"
-              if [[ "$file" == *"compose"* ]]; then TYPE="Compose"; fi
-              echo "| \`$repo\` | $TYPE | [\`$file\`](https://github.com/$repo/blob/main/$file) |" >> discovery_report.md
+            for file in $FILES; do
+              # Download the file
+              CONTENT=$(gh api "/repos/$repo/contents/$file" --jq '.content' | base64 -d 2>/dev/null)
+              
+              if [[ "$file" == "Dockerfile" ]]; then
+                mkdir -p "build/$REPO_CLEAN"
+                echo "$CONTENT" > "build/$REPO_CLEAN/Dockerfile"
+                echo "| \`$repo\` | Dockerfile | Collected to \`build/$REPO_CLEAN/\` |" >> discovery_report.md
+                
+                # Create a basic one-liner
+                mkdir -p "containers"
+                IMAGE_NAME="ghcr.io/rpdevs-vault/${REPO_CLEAN,,}"
+                echo "docker run -d --name $REPO_CLEAN $IMAGE_NAME:latest" > "containers/$REPO_CLEAN.sh"
+              fi
+              
+              if [[ "$file" == *"compose"* ]]; then
+                mkdir -p "compose/$REPO_CLEAN"
+                echo "$CONTENT" > "compose/$REPO_CLEAN/$file"
+                echo "| \`$repo\` | Compose | Collected to \`compose/$REPO_CLEAN/\` |" >> discovery_report.md
+              fi
             done
           done
 
-          gh issue create --repo RPDevs-Vault/container-manager --title "Weekly Docker Asset Discovery" --body-file discovery_report.md --label "enhancement"
+          # Commit changes
+          git config user.name "Asset Collector"
+          git config user.email "actions@github.com"
+          git add build/ compose/ containers/ images/
+          if ! git diff --staged --quiet; then
+            git commit -m "feat: automatically collect Docker assets from organization and personal repos"
+            git push origin main
+          fi
+
+          # Post summary to an issue if new assets were found
+          if [ -f discovery_report.md ]; then
+            gh issue create --repo RPDevs-Vault/container-manager --title "Weekly Docker Asset Collection Summary" --body-file discovery_report.md --label "enhancement"
+          fi
