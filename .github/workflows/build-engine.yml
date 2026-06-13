@@ -22,18 +22,18 @@ jobs:
       - id: set-matrix
         run: |
           # 1. Collect local builds
-          LOCAL_JSON=$(ls -d build/*/ 2>/dev/null | xargs -n 1 basename | jq -R -s -c 'split("\n")[:-1] | map({name: ., source: "local", dir: "build/" + .})')
+          LOCAL_JSON=$(ls -d build/*/ 2>/dev/null | xargs -n 1 basename | jq -R -s -c 'split("\n")[:-1] | map({name: ., source: "local", dir: "build/\(.)"})')
           if [ -z "$LOCAL_JSON" ]; then LOCAL_JSON="[]"; fi
 
           # 2. Collect runners
-          RUNNER_JSON=$(ls -d runners/*/ 2>/dev/null | xargs -n 1 basename | jq -R -s -c 'split("\n")[:-1] | map({name: "runner-" + ., source: "runner", dir: "runners/" + .})')
+          RUNNER_JSON=$(ls -d runners/*/ 2>/dev/null | xargs -n 1 basename | jq -R -s -c 'split("\n")[:-1] | map({name: "runner-" + ., source: "runner", dir: "runners/\(.)"})')
           if [ -z "$RUNNER_JSON" ]; then RUNNER_JSON="[]"; fi
 
           # 3. Collect manifest projects
-          MANIFEST_JSON=$(yq -o=json -c '.projects // []' manifest.yaml | jq -c 'map(. + {source: "manifest", dir: "build/" + .name})')
+          MANIFEST_JSON=$(yq -o=json -c '.projects // []' manifest.yaml | jq -c 'map(. + {source: "manifest", dir: "build/\(.name)"})')
           
           # 4. Collect thirdparty projects
-          THIRDPARTY_JSON=$(yq -o=json -c '.repositories // []' thirdparty.yaml | jq -c 'map(. + {source: "thirdparty", dir: "build/" + .name})')
+          THIRDPARTY_JSON=$(yq -o=json -c '.repositories // []' thirdparty.yaml | jq -c 'map(. + {source: "thirdparty", dir: "build/\(.name)"})')
 
           # Merge all into a single array
           FULL_MATRIX=$(echo "$LOCAL_JSON $RUNNER_JSON $MANIFEST_JSON $THIRDPARTY_JSON" | jq -s -c 'add | if length == 0 then [{"name":"dummy","source":"dummy","dir":"dummy"}] else . end')
