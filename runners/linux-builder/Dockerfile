@@ -24,6 +24,13 @@ RUN apt-get update && apt-get install -y \
     ninja-build \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Docker CLI and Node.js 20 LTS (or 22)
+RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu jammy stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && \
+    apt-get update && apt-get install -y docker-ce-cli nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
 # Pre-install ALL Kodi C++ build dependencies (The massive list we identified)
 RUN apt-get update && apt-get install -y \
     autoconf automake autopoint gettext libtool gawk gperf \
@@ -53,7 +60,7 @@ RUN useradd -m runner && \
 
 # Download and install the GitHub Runner agent
 WORKDIR /home/runner
-ARG RUNNER_VERSION=2.317.0
+ARG RUNNER_VERSION=2.335.1
 RUN curl -o actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz -L https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz && \
     tar xzf ./actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz && \
     rm actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz

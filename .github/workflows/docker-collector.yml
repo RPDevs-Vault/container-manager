@@ -84,6 +84,7 @@ jobs:
           
           if ! git diff --staged --quiet; then
             git commit -m "feat: archive discovered Docker assets to ./containers to prevent auto-builds"
+            git pull --rebase origin main || (git rebase --abort && git pull origin main --no-rebase)
             git push origin main
           fi
 
