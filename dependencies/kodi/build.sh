@@ -31,7 +31,11 @@ if command -v ccache >/dev/null 2>&1 && [ -n "$CCACHE_DIR" ]; then
 fi
 
 ./bootstrap
-./configure --prefix="$PREFIX_DIR" --host="$HOST_TRIPLET" --with-platform="$PLATFORM"
+if [ "$PLATFORM" == "linux" ]; then
+  ./configure --prefix="$PREFIX_DIR" --host="$HOST_TRIPLET"
+else
+  ./configure --prefix="$PREFIX_DIR" --host="$HOST_TRIPLET" --with-platform="$PLATFORM"
+fi
 
 # 3. Build Dependencies
 # Using multiple cores
