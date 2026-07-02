@@ -32,7 +32,7 @@ fi
 
 ./bootstrap
 if [ "$PLATFORM" == "linux" ]; then
-  ./configure --prefix="$PREFIX_DIR" --host="$HOST_TRIPLET"
+  ./configure --prefix="$PREFIX_DIR" --host="$HOST_TRIPLET" --with-rendersystem=gl
 else
   ./configure --prefix="$PREFIX_DIR" --host="$HOST_TRIPLET" --with-platform="$PLATFORM"
 fi
