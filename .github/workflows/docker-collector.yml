@@ -6,8 +6,8 @@ concurrency:
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 0 * * 0'
+  repository_dispatch:
+    types: [collect_docker_assets]
 
 jobs:
   collect:
